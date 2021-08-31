@@ -8,17 +8,18 @@ set  -o xtrace  -o errexit  -o nounset  -o pipefail  +o history
 
 DEVICE=$1
 ROOTFS="/tmp/installing-rootfs"
+CACHE_DIR="/root/tmp/debootstrap"
 OS_CODENAME="focal"
 OS_MIRROR="http://nl.archive.ubuntu.com/ubuntu"
-KERNEL_VARIANT="generic" # other examples:  virtual, generic, aws
+KERNEL_VARIANT="virtual" # other examples:  virtual, generic, aws
 INSTALL_COMPONENTS="main,universe,multiverse,restricted"
-INSTALL_PKG="busybox,linux-image-${KERNEL_VARIANT},linux-headers-${KERNEL_VARIANT},grub-efi"
+INSTALL_PKG="ubuntu-minimal,linux-${KERNEL_VARIANT},grub-efi,language-pack-en-base,initramfs-tools,busybox,vim"
 
-OS_CODENAME="buster"
-OS_MIRROR="http://deb.debian.org/debian"
-KERNEL_VARIANT="amd64"
-INSTALL_COMPONENTS="main,universe,multiverse,restricted"
-INSTALL_PKG="busybox,linux-image-${KERNEL_VARIANT},linux-headers-${KERNEL_VARIANT},grub-efi"
+#OS_CODENAME="buster"
+#OS_MIRROR="http://deb.debian.org/debian"
+#KERNEL_VARIANT="amd64"
+#INSTALL_COMPONENTS="main,universe,multiverse,restricted"
+#INSTALL_PKG="busybox,linux-image-${KERNEL_VARIANT},linux-headers-${KERNEL_VARIANT},grub-efi"
 
 apt-get  --yes   install  debootstrap  parted  e2fsprogs  fdisk
 
@@ -39,22 +40,25 @@ parted ${DEVICE} --script set 1 msftdata on
 echo "Create OS partition"
 parted ${DEVICE} --script mkpart LINUX ext4 10MiB 100%
 
-sleep 1
+sync
+# sleep 1
 
 echo "Format partitions"
 mkfs.vfat  -n EFI  "${DEVICE}1"
 mkfs.ext4  -L LINUX  "${DEVICE}2"
 
 echo "Mount OS partition"
-mkdir  -p  "${ROOTFS}"
+mkdir  --parents  --mode=700  "${ROOTFS}"
 mount  "${DEVICE}2"  "${ROOTFS}"
 
+mkdir  --parents  --mode=700  "${CACHE_DIR}"
 echo "Debootstrap system"
 debootstrap  \
   --variant=minbase \
   --arch amd64 \
   --components="${INSTALL_COMPONENTS}" \
   --include="${INSTALL_PKG}" \
+  --cache-dir="${CACHE_DIR}" \
   "${OS_CODENAME}" \
   "${ROOTFS}" \
   "${OS_MIRROR}"
@@ -74,18 +78,14 @@ echo "Entering chroot, installing Linux kernel and Grub"
 cat << EOF | chroot ${ROOTFS} /bin/bash
   set  -o xtrace  -o errexit  -o nounset  -o pipefail  +o history
   export HOME=/root
-  # export DEBIAN_FRONTEND=noninteractive
-  # debconf-set-selections <<< "grub-efi-amd64 grub2/update_nvram boolean false"
-  # apt-get remove -y grub-efi grub-efi-amd64
-  # apt-get  update
-  # apt-get  install  --yes  "linux-image-${KERNEL_VARIANT}"  "linux-headers-${KERNEL_VARIANT}"  grub-efi
-  # grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian --recheck --no-nvram --removable
-  grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${OS_CODENAME}" --recheck --no-nvram --removable
-  # grub-install --target=x86_64-efi --efi-directory=/boot/efi  --bootloader-id=debian  --recheck
-  # grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${OS_CODENAME}" --recheck --debug
-  GRUB_DISABLE_OS_PROBER=0  update-grub
-  # update-grub
+  export DEBIAN_FRONTEND=noninteractive
+  grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${OS_CODENAME}" --recheck --no-nvram --removable "${DEVICE}"
+  echo "LABEL=LINUX  /          ext4    errors=remount-ro  0       1" > /etc/fstab
+  echo "LABEL=EFI    /boot/efi  vfat    umask=0077         0       1" >> /etc/fstab
+  update-grub
+  echo "root:secret" | chpasswd
   test -f /sbin/init  ||  ln  -sfnv  /bin/busybox  /sbin/init
+  echo "naked-ubuntu" > /etc/hostname
 EOF
 
 echo "Unmounting filesystems"
