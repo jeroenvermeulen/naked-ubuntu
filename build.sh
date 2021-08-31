@@ -13,7 +13,7 @@ OS_CODENAME="focal"
 OS_MIRROR="http://nl.archive.ubuntu.com/ubuntu"
 KERNEL_VARIANT="virtual" # other examples:  virtual, generic, aws
 INSTALL_COMPONENTS="main,universe,multiverse,restricted"
-INSTALL_PKG="ubuntu-minimal,linux-${KERNEL_VARIANT},grub-efi,language-pack-en-base,initramfs-tools,busybox,vim"
+INSTALL_PKG="linux-${KERNEL_VARIANT},grub-efi,language-pack-en-base,initramfs-tools,busybox,vim"  # ubuntu-minimal
 
 #OS_CODENAME="buster"
 #OS_MIRROR="http://deb.debian.org/debian"
@@ -41,7 +41,6 @@ echo "Create OS partition"
 parted ${DEVICE} --script mkpart LINUX ext4 10MiB 100%
 
 sync
-# sleep 1
 
 echo "Format partitions"
 mkfs.vfat  -n EFI  "${DEVICE}1"
@@ -82,6 +81,7 @@ cat << EOF | chroot ${ROOTFS} /bin/bash
   grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id="${OS_CODENAME}" --recheck --no-nvram --removable "${DEVICE}"
   echo "LABEL=LINUX  /          ext4    errors=remount-ro  0       1" > /etc/fstab
   echo "LABEL=EFI    /boot/efi  vfat    umask=0077         0       1" >> /etc/fstab
+  update-initramfs -c -k all
   update-grub
   echo "root:secret" | chpasswd
   test -f /sbin/init  ||  ln  -sfnv  /bin/busybox  /sbin/init
