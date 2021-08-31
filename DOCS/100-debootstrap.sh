@@ -24,3 +24,31 @@ debootstrap \
   --components="$INSTALL_COMPONENTS" \
   --include="$INSTALL_PKG" \
   focal "${MOUNTPOINT}"  "$UBUNTU_MIRROR"
+  
+mount | grep "${MOUNTPOINT}/tmp" || mount -t tmpfs tmp "${MOUNTPOINT}/tmp"
+mount | grep "${MOUNTPOINT}/proc" || mount -t proc proc "${MOUNTPOINT}/proc"
+mount | grep "${MOUNTPOINT}/sys" || mount -t sysfs sys "${MOUNTPOINT}/sys"
+if ! mount | grep "${MOUNTPOINT}/dev"; then
+    if ! mount -t devtmpfs dev "${MOUNTPOINT}/dev"; then
+        mount -t tmpfs dev "${MOUNTPOINT}/dev"
+        cp -a /dev/* "${MOUNTPOINT}/dev/"
+        rm -rf "${MOUNTPOINT}/dev/pts"
+        mkdir "${MOUNTPOINT}/dev/pts"
+    fi
+fi
+mount | grep "${MOUNTPOINT}/dev/pts" || mount --bind /dev/pts "${MOUNTPOINT}/dev/pts"
+echo "target" > "${MOUNTPOINT}/etc/debian_chroot"
+
+wget https://www.busybox.net/downloads/binaries/1.31.0-i686-uclibc/busybox -O "${MOUNTPOINT}/busybox"
+chmod +x "${MOUNTPOINT}/busybox"
+
+DEBIAN_FRONTEND=noninteractive chroot "${MOUNTPOINT}" apt-get  --yes  install  grub-efi
+chroot "${MOUNTPOINT}" grub-install "${TARGETDEV}"
+chroot "${MOUNTPOINT}" update-grub
+
+umount  "${MOUNTPOINT}/tmp"
+umount  "${MOUNTPOINT}/proc"
+umount  "${MOUNTPOINT}/sys"
+umount  "${MOUNTPOINT}/dev/pts"
+umount  "${MOUNTPOINT}/dev"
+umount  "${MOUNTPOINT}"
